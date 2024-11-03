@@ -10,7 +10,8 @@ import (
 	"strconv"
 	"time"
 
-	fitz "github.com/gen2brain/go-fitz"
+	"github.com/unidoc/unipdf/v3/model"
+	"github.com/unidoc/unipdf/v3/render"
 
 	"arif/clients"
 	"arif/clients/aws_s3"
@@ -129,41 +130,60 @@ func GenerateMD5Hash(numBytes int) string {
 // outputDir is the directory where the images will be saved.
 func PdfToImages(ctx context.Context, fileBytes []byte, hash string) (map[int]string, error) {
 	result := make(map[int]string)
-	// Open the PDF document
-	doc, err := fitz.NewFromMemory(fileBytes)
-	if err != nil {
-		return nil, fmt.Errorf("could not open PDF file: %v", err)
-	}
-	defer doc.Close()
 
-	// Loop through each page of the PDF
-	for n := 0; n < doc.NumPage(); n++ {
-		// Convert the rendered page to an image.Image
-		pix, err := doc.Image(n)
+	// Create a bytes.Reader from the []byte
+	reader := bytes.NewReader(fileBytes)
+
+	// Create a new PDF reader from the bytes.Reader
+	pdfReader, err := model.NewPdfReader(reader)
+	if err != nil {
+		return nil, fmt.Errorf("error creating PDF reader: %v", err)
+	}
+
+	// Get the total number of pages
+	numPages, err := pdfReader.GetNumPages()
+	if err != nil {
+		return nil, fmt.Errorf("error getting page count: %v", err)
+	}
+
+	// Iterate through each page
+	for n := 1; n <= numPages; n++ {
+		// Get the page
+		page, err := pdfReader.GetPage(n)
 		if err != nil {
-			return nil, fmt.Errorf("could not get image from page %d: %v", n+1, err)
+			return nil, fmt.Errorf("could not get page %d: %v", n, err)
+		}
+
+		// Create a new renderer
+		renderer := render.NewImageDevice()
+
+		// Render the page to an image
+		img, err := renderer.Render(page)
+		if err != nil {
+			return nil, fmt.Errorf("could not render page %d: %v", n, err)
 		}
 
 		// Create a buffer to hold the encoded image
 		var buf bytes.Buffer
 
 		// Encode the image to PNG and write it to the buffer
-		err = png.Encode(&buf, pix)
+		err = png.Encode(&buf, img)
 		if err != nil {
-			return nil, fmt.Errorf("could not encode image: %v", err)
+			return nil, fmt.Errorf("could not encode image for page %d: %v", n, err)
 		}
 
 		// Get the byte slice from the buffer
 		imageBytes := buf.Bytes()
 
-		locationURL, err := aws_s3.UploadImageToS3(ctx, imageBytes, bucketName, fmt.Sprintf("images/%s_page_%d.png", hash, n+1))
+		// Upload the image to S3
+		locationURL, err := aws_s3.UploadImageToS3(ctx, imageBytes, bucketName, fmt.Sprintf("images/%s_page_%d.png", hash, n))
 		if err != nil {
-			return nil, fmt.Errorf("could not upload image: %v", err)
+			return nil, fmt.Errorf("could not upload image for page %d: %v", n, err)
 		}
 
-		result[n+1] = locationURL
+		result[n] = locationURL
 
-		fmt.Println("uploading... page number: ", n+1)
+		fmt.Println("Uploading... page number:", n)
 	}
 
 	return result, nil

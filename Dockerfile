@@ -12,7 +12,7 @@ RUN apk update && apk add --no-cache git
 
 WORKDIR /build
 
-RUN go clean -modcache
+#RUN go clean -modcache
 
 ADD go.mod .
 ADD go.sum .
@@ -23,11 +23,10 @@ RUN go build -ldflags="-s -w" -o /app/main main.go
 
 FROM scratch
 
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-COPY --from=builder /usr/share/zoneinfo/Asia/Shanghai /usr/share/zoneinfo/Asia/Shanghai
-ENV TZ Asia/Shanghai
-
 WORKDIR /app
 COPY --from=builder /app/main /app/main
+COPY --from=builder /build/.env /app/.env
+
+EXPOSE 8098
 
 CMD ["./main"]
