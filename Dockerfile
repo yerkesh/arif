@@ -8,7 +8,9 @@ ENV GOSUMDB=off
 ENV GOPROXY=direct
 
 # Install git
-RUN apk update && apk add --no-cache git
+RUN apk update && apk add --no-cache git && \
+    apk add --no-cache ca-certificates && \
+    update-ca-certificates
 
 WORKDIR /build
 
@@ -26,6 +28,7 @@ FROM scratch
 WORKDIR /app
 COPY --from=builder /app/main /app/main
 COPY --from=builder /build/.env /app/.env
+COPY --from=builder /build/root.crt /app/.env
 
 EXPOSE 8098
 
